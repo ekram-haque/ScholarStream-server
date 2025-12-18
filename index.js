@@ -62,7 +62,15 @@ const verifyAdmin = async (req, res, next) => {
   next();
 };
 
+const verifyModerator = async (req, res, next) => {
+  const email = req.decoded.email;
+  const user = await usersCollection.findOne({ email });
 
+  if (user?.role !== "Moderator") {
+    return res.status(403).send({ message: "Moderator only access" });
+  }
+  next();
+};
 
 /* ======================
    DATABASE & ROUTES
@@ -106,8 +114,32 @@ async function run() {
       }
     });
 
+    // Get user role
+    app.get("/users/role", async (req, res) => {
+      try {
+        const email = req.query.email;
+        const user = await usersCollection.findOne({ email });
+        res.send({ role: user?.role || "Student" });
+      } catch (error) {
+        res.status(500).send({ message: error.message });
+      }
+    });
 
+    // Admin: Get all users
+    app.get("/dashboard/users", verifyJWT, verifyAdmin, async (req, res) => {
+      const users = await usersCollection.find().toArray();
+      res.send(users);
+    });
 
+    /* ========= JWT ========= */
+
+    app.post("/jwt", (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.JWT_SECRET, {
+        expiresIn: "1h",
+      });
+      res.send({ token });
+    });
 
     /* ========= SCHOLARSHIPS ========= */
 
@@ -166,6 +198,24 @@ async function run() {
         res.status(500).send({ message: error.message });
       }
     });
+
+    app.get("/scholarships/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const scholarship = await scholarshipsCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!scholarship) {
+      return res.status(404).send({ message: "Scholarship not found" });
+    }
+
+    res.send(scholarship);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
 
     console.log("✅ MongoDB Connected Successfully");
   } finally {
