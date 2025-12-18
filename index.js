@@ -75,10 +75,40 @@ async function run() {
     await client.connect();
 
     const db = client.db("scholarstreamdb");
-   
+    usersCollection = db.collection("users");
     scholarshipsCollection = db.collection("scholarships");
 
-    
+    /* ========= USERS ========= */
+
+    // Create user
+    app.post("/users", async (req, res) => {
+      try {
+        const user = req.body;
+
+        const existingUser = await usersCollection.findOne({
+          email: user.email,
+        });
+
+        if (existingUser) {
+          return res.send({ message: "User already exists" });
+        }
+
+        const newUser = {
+          ...user,
+          role: "student",
+          createdAt: new Date(),
+        };
+
+        const result = await usersCollection.insertOne(newUser);
+        res.send({ success: true, insertedId: result.insertedId });
+      } catch (error) {
+        res.status(500).send({ message: error.message });
+      }
+    });
+
+
+
+
     /* ========= SCHOLARSHIPS ========= */
 
     // Get scholarships (search, filter, sort, pagination)
