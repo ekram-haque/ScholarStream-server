@@ -52,6 +52,17 @@ const verifyJWT = (req, res, next) => {
   });
 };
 
+const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded.email;
+  const user = await usersCollection.findOne({ email });
+
+  if (user?.role !== "Admin") {
+    return res.status(403).send({ message: "Admin only access" });
+  }
+  next();
+};
+
+
 
 /* ======================
    DATABASE & ROUTES
@@ -67,8 +78,7 @@ async function run() {
    
     scholarshipsCollection = db.collection("scholarships");
 
-  
-
+    
     /* ========= SCHOLARSHIPS ========= */
 
     // Get scholarships (search, filter, sort, pagination)
