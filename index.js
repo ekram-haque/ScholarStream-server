@@ -49,7 +49,51 @@ async function run() {
 
     /* ========= SCHOLARSHIPS ========= */
 
-  
+    // Get scholarships (search, filter, sort, pagination)
+    app.get("/scholarships", async (req, res) => {
+      try {
+        const {
+          search = "",
+          category = "",
+          sort = "",
+          page = 1,
+          limit = 6,
+        } = req.query;
+
+        const query = {};
+
+        if (search) {
+          query.$or = [
+            { scholarshipName: { $regex: search, $options: "i" } },
+            { universityName: { $regex: search, $options: "i" } },
+            { degree: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        if (category) {
+          query.scholarshipCategory = category;
+        }
+
+        let sortQuery = {};
+        if (sort === "fee_asc") sortQuery.applicationFees = 1;
+        if (sort === "fee_desc") sortQuery.applicationFees = -1;
+        if (sort === "date_desc") sortQuery.scholarshipPostDate = -1;
+
+        const scholarships = await scholarshipsCollection
+          .find(query)
+          .sort(sortQuery)
+          .skip((page - 1) * limit)
+          .limit(parseInt(limit))
+          .toArray();
+
+        const total = await scholarshipsCollection.countDocuments(query);
+
+        res.send({ scholarships, total });
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch scholarships" });
+      }
+    });
+
     // Add scholarship
     app.post("/scholarships", async (req, res) => {
       try {
