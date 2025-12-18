@@ -20,6 +20,22 @@ app.get("/", (req, res) => {
 });
 
 /* ======================
+   MONGODB CONNECTION
+====================== */
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.gab2mh0.mongodb.net/?appName=Cluster0`;
+
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
+});
+
+
+run().catch(console.error);
+
+/* ======================
    SERVER START
 ====================== */
 const port = process.env.PORT || 5000;
