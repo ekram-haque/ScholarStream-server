@@ -33,6 +33,40 @@ const client = new MongoClient(uri, {
 });
 
 
+/* ======================
+   DATABASE & ROUTES
+====================== */
+let usersCollection;
+let scholarshipsCollection;
+
+async function run() {
+  try {
+    await client.connect();
+
+    const db = client.db("scholarstreamdb");
+  
+    scholarshipsCollection = db.collection("scholarships");
+
+    /* ========= SCHOLARSHIPS ========= */
+
+  
+    // Add scholarship
+    app.post("/scholarships", async (req, res) => {
+      try {
+        const scholarship = req.body;
+        const result = await scholarshipsCollection.insertOne(scholarship);
+        res.send({ success: true, insertedId: result.insertedId });
+      } catch (error) {
+        res.status(500).send({ message: error.message });
+      }
+    });
+
+    console.log("✅ MongoDB Connected Successfully");
+  } finally {
+    // client.close(); 
+  }
+}
+
 run().catch(console.error);
 
 /* ======================
