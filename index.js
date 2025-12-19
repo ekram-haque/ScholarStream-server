@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
 
@@ -125,6 +125,13 @@ async function run() {
       }
     });
 
+    //get one user
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email });
+      res.send(user);
+    });
+
     // Admin: Get all users
     app.get("/dashboard/users", verifyJWT, verifyAdmin, async (req, res) => {
       const users = await usersCollection.find().toArray();
@@ -200,26 +207,26 @@ async function run() {
     });
 
     app.get("/scholarships/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
+      try {
+        const id = req.params.id;
 
-    const scholarship = await scholarshipsCollection.findOne({
-      _id: new ObjectId(id),
+        const scholarship = await scholarshipsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!scholarship) {
+          return res.status(404).send({ message: "Scholarship not found" });
+        }
+
+        res.send(scholarship);
+      } catch (error) {
+        res.status(500).send({ message: error.message });
+      }
     });
-
-    if (!scholarship) {
-      return res.status(404).send({ message: "Scholarship not found" });
-    }
-
-    res.send(scholarship);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
 
     console.log("✅ MongoDB Connected Successfully");
   } finally {
-    // client.close(); 
+    // client.close();
   }
 }
 
