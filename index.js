@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 
@@ -299,13 +300,13 @@ async function run() {
     });
 
     app.get("/applications/:id", async (req, res) => {
-  const id = req.params.id;
-  const application = await applicationsCollection.findOne({
-    _id: new ObjectId(id)
-  });
+      const id = req.params.id;
+      const application = await applicationsCollection.findOne({
+        _id: new ObjectId(id),
+      });
 
-  res.send(application);
-});
+      res.send(application);
+    });
 
     /* ========= USERS ========= */
 
@@ -730,6 +731,68 @@ async function run() {
         res.status(500).send({ message: error.message });
       }
     });
+
+    // payment related apis
+
+app.post("/create-checkout-session", verifyJWT, async (req, res) => {
+  const paymentInfo = req.body;
+
+  const amount =
+    (Number(paymentInfo.applicationFees) + Number(paymentInfo.serviceCharge)) * 100;
+
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ["card"],
+    line_items: [
+      {
+        price_data: {
+          currency: "USD",
+          unit_amount: amount,
+          product_data: {
+            name: paymentInfo.scholarshipName,
+          },
+        },
+        quantity: 1,
+      },
+    ],
+    customer_email: paymentInfo.email,
+    mode: "payment",
+    metadata: {
+      applicationId: paymentInfo.applicationId,
+    },
+    success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+  });
+
+  res.send({ url: session.url });
+});
+
+app.patch("/verify-payment", async (req, res) => {
+  const sessionId = req.query.session_id;
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const applicationId = session.metadata.applicationId; 
+
+    if (session.payment_status === "paid") {
+      const result = await applicationsCollection.updateOne(
+        { _id: new ObjectId(applicationId) },
+        { $set: { paymentStatus: "paid" } }
+      );
+
+      if (result.matchedCount > 0) {
+        return res.send({ message: "Payment verified and status updated!" });
+      } else {
+        return res.status(404).send({ message: "Application not found" });
+      }
+    } else {
+      return res.status(400).send({ message: "Payment not completed" });
+    }
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send({ message: err.message });
+  }
+});
+
 
     // console.log("✅ MongoDB Connected Successfully");
   } finally {
