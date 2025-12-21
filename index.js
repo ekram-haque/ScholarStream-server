@@ -16,9 +16,12 @@ app.use(express.json());
    BASIC ROUTE
 ====================== */
 app.get("/", (req, res) => {
-  res.send("ScholarStream Server Running 🚀");
+  res.status(200).json({
+    success: true,
+    message: "ScholarStream Server is running ",
+    version: "1.0.0",
+  });
 });
-
 /* ======================
    MONGODB CONNECTION
 ====================== */
@@ -295,6 +298,15 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/applications/:id", async (req, res) => {
+  const id = req.params.id;
+  const application = await applicationsCollection.findOne({
+    _id: new ObjectId(id)
+  });
+
+  res.send(application);
+});
+
     /* ========= USERS ========= */
 
     // Create user
@@ -340,12 +352,6 @@ async function run() {
       const user = await usersCollection.findOne({ email });
       res.send(user);
     });
-
-    // // Admin: Get all users
-    // app.get("/dashboard/users", verifyJWT, verifyAdmin, async (req, res) => {
-    //   const users = await usersCollection.find().toArray();
-    //   res.send(users);
-    // });
 
     // Middleware: verifyJWT, verifyAdmin
     app.get("/admin/scholarships", verifyJWT, verifyAdmin, async (req, res) => {
@@ -444,56 +450,57 @@ async function run() {
     );
 
     // Analytics route
-  app.get(
-  "/dashboard/analytics",
-  verifyJWT,
-  verifyAdmin,
-  async (req, res) => {
-    try {
-      const totalUsers = await usersCollection.countDocuments();
-      const totalScholarships = await scholarshipsCollection.countDocuments();
+    app.get(
+      "/dashboard/analytics",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const totalUsers = await usersCollection.countDocuments();
+          const totalScholarships =
+            await scholarshipsCollection.countDocuments();
 
-      // Only PAID applications
-      const applications = await applicationsCollection
-        .find({ paymentStatus: "paid" })
-        .toArray();
+          // Only PAID applications
+          const applications = await applicationsCollection
+            .find({ paymentStatus: "paid" })
+            .toArray();
 
-      // ✅ Total fees collected
-      const totalFeesCollected = applications.reduce(
-        (sum, app) =>
-          sum + (app.applicationFees || 0) + (app.serviceCharge || 0),
-        0
-      );
+          // ✅ Total fees collected
+          const totalFeesCollected = applications.reduce(
+            (sum, app) =>
+              sum + (app.applicationFees || 0) + (app.serviceCharge || 0),
+            0
+          );
 
-      // ✅ Applications per university
-      const applicationsPerUniversity = {};
-      applications.forEach((app) => {
-        const uni = app.universityName || "Unknown";
-        applicationsPerUniversity[uni] =
-          (applicationsPerUniversity[uni] || 0) + 1;
-      });
+          // ✅ Applications per university
+          const applicationsPerUniversity = {};
+          applications.forEach((app) => {
+            const uni = app.universityName || "Unknown";
+            applicationsPerUniversity[uni] =
+              (applicationsPerUniversity[uni] || 0) + 1;
+          });
 
-      // ✅ Applications per subject category
-      const applicationsPerCategory = {};
-      applications.forEach((app) => {
-        const cat = app.subjectCategory || "Other";
-        applicationsPerCategory[cat] =
-          (applicationsPerCategory[cat] || 0) + 1;
-      });
+          // ✅ Applications per subject category
+          const applicationsPerCategory = {};
+          applications.forEach((app) => {
+            const cat = app.subjectCategory || "Other";
+            applicationsPerCategory[cat] =
+              (applicationsPerCategory[cat] || 0) + 1;
+          });
 
-      res.send({
-        totalUsers,
-        totalScholarships,
-        totalFeesCollected,
-        applicationsPerUniversity,
-        applicationsPerCategory,
-      });
-    } catch (error) {
-      console.error(error);
-      res.status(500).send({ message: "Failed to fetch analytics" });
-    }
-  }
-);
+          res.send({
+            totalUsers,
+            totalScholarships,
+            totalFeesCollected,
+            applicationsPerUniversity,
+            applicationsPerCategory,
+          });
+        } catch (error) {
+          console.error(error);
+          res.status(500).send({ message: "Failed to fetch analytics" });
+        }
+      }
+    );
 
     // ======================
     // Moderator: Get all applications
@@ -724,7 +731,7 @@ async function run() {
       }
     });
 
-    console.log("✅ MongoDB Connected Successfully");
+    // console.log("✅ MongoDB Connected Successfully");
   } finally {
     // client.close();
   }
@@ -737,5 +744,5 @@ run().catch(console.error);
 ====================== */
 const port = process.env.PORT || 5000;
 app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
+  // console.log(`🚀 Server running on port ${port}`);
 });
