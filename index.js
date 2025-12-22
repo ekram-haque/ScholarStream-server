@@ -10,8 +10,15 @@ const app = express();
 /* ======================
    MIDDLEWARE
 ====================== */
-app.use(cors());
+// app.use(cors());
 app.use(express.json());
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "https://scholarstream.pages.dev"],
+
+    credentials: true,
+  })
+);
 
 /* ======================
    BASIC ROUTE
@@ -87,7 +94,7 @@ let reviewsCollection;
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("scholarstreamdb");
     usersCollection = db.collection("users");
@@ -99,7 +106,6 @@ async function run() {
     app.get("/reviews", verifyJWT, async (req, res) => {
       const email = req.query.email;
 
-      // security check
       if (req.decoded.email !== email) {
         return res.status(403).send({ message: "Forbidden" });
       }
@@ -107,8 +113,9 @@ async function run() {
       try {
         const result = await reviewsCollection
           .find({ userEmail: email })
-          .sort({ createdAt: -1 })
+          .sort({ reviewDate: -1 })
           .toArray();
+
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: error.message });
@@ -117,32 +124,41 @@ async function run() {
 
     // Add a review
     app.post("/reviews", verifyJWT, async (req, res) => {
-      const { applicationId, rating, comment } = req.body;
+      const { applicationId, ratingPoint, reviewComment } = req.body;
 
       try {
-        // Find the application first
         const application = await applicationsCollection.findOne({
           _id: new ObjectId(applicationId),
         });
-        if (!application)
-          return res.status(404).send({ message: "Application not found" });
 
-        // Only allow review if application is approved
+        if (!application) {
+          return res.status(404).send({ message: "Application not found" });
+        }
+
         if (application.applicationStatus !== "approved") {
           return res
             .status(403)
             .send({ message: "Cannot review before approval" });
         }
 
+        // ❌ prevent duplicate review
+        const exists = await reviewsCollection.findOne({ applicationId });
+        if (exists) {
+          return res.status(400).send({ message: "Review already submitted" });
+        }
+
         const newReview = {
-          scholarshipId: application._id,
+          applicationId,
+          scholarshipId: application.scholarshipId || null,
           scholarshipName:
             application.scholarshipName || application.subjectCategory,
           universityName: application.universityName,
+
           userName: req.decoded.name || req.decoded.email,
           userEmail: req.decoded.email,
-          ratingPoint: rating,
-          reviewComment: comment,
+
+          ratingPoint: Number(ratingPoint),
+          reviewComment,
           reviewDate: new Date(),
         };
 
@@ -156,12 +172,17 @@ async function run() {
     // Update a review
     app.patch("/reviews/:id", verifyJWT, async (req, res) => {
       const id = req.params.id;
-      const { rating, comment } = req.body;
+      const { ratingPoint, reviewComment } = req.body;
 
       try {
         const updated = await reviewsCollection.findOneAndUpdate(
-          { _id: new ObjectId(id), userEmail: req.decoded.email }, // security: only own review
-          { $set: { rating, comment } },
+          { _id: new ObjectId(id), userEmail: req.decoded.email },
+          {
+            $set: {
+              ratingPoint: Number(ratingPoint),
+              reviewComment,
+            },
+          },
           { returnDocument: "after" }
         );
 
@@ -184,7 +205,7 @@ async function run() {
       try {
         const result = await reviewsCollection.deleteOne({
           _id: new ObjectId(id),
-          userEmail: req.decoded.email, // only delete own review
+          userEmail: req.decoded.email,
         });
 
         if (result.deletedCount === 0) {
@@ -506,8 +527,7 @@ async function run() {
     // ======================
     // Moderator: Get all applications
     // ======================
-    app.get(
-      "/moderator/applications",
+    app.get("/moderator/applications",
       verifyJWT,
       verifyModerator,
       async (req, res) => {
@@ -524,8 +544,7 @@ async function run() {
     );
 
     // Moderator: Update application status
-    app.patch(
-      "/moderator/applications/:id",
+    app.patch("/moderator/applications/:id",
       verifyJWT,
       verifyModerator,
       async (req, res) => {
@@ -551,8 +570,7 @@ async function run() {
     );
 
     // Get all reviews (for moderator)
-    app.get(
-      "/moderator/reviews",
+    app.get("/moderator/reviews",
       verifyJWT,
       verifyModerator,
       async (req, res) => {
@@ -568,8 +586,7 @@ async function run() {
       }
     );
 
-    app.delete(
-      "/moderator/reviews/:id",
+    app.delete("/moderator/reviews/:id",
       verifyJWT,
       verifyModerator,
       async (req, res) => {
@@ -591,13 +608,18 @@ async function run() {
 
     /* ========= JWT ========= */
 
-    app.post("/jwt", (req, res) => {
-      const { email } = req.body;
-      const token = jwt.sign({ email }, process.env.JWT_SECRET, {
-        expiresIn: "1h",
-      });
-      res.send({ token });
-    });
+  app.post("/jwt", async (req, res) => {
+  const { email } = req.body;
+  const user = await usersCollection.findOne({ email });
+  if (!user) return res.status(404).send({ message: "User not found" });
+
+  const token = jwt.sign(
+    { email: user.email, name: user.name },  
+    process.env.JWT_SECRET,
+    { expiresIn: "1h" }
+  );
+  res.send({ token });
+});
 
     /* ========= SCHOLARSHIPS ========= */
 
@@ -698,8 +720,7 @@ async function run() {
     });
 
     // Delete scholarship
-    app.delete(
-      "/scholarships/:id",
+    app.delete("/scholarships/:id",
       verifyJWT,
       verifyAdmin,
       async (req, res) => {
@@ -732,67 +753,95 @@ async function run() {
       }
     });
 
-    // payment related apis
-
-app.post("/create-checkout-session", verifyJWT, async (req, res) => {
-  const paymentInfo = req.body;
-
-  const amount =
-    (Number(paymentInfo.applicationFees) + Number(paymentInfo.serviceCharge)) * 100;
-
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ["card"],
-    line_items: [
-      {
-        price_data: {
-          currency: "USD",
-          unit_amount: amount,
-          product_data: {
-            name: paymentInfo.scholarshipName,
-          },
-        },
-        quantity: 1,
-      },
-    ],
-    customer_email: paymentInfo.email,
-    mode: "payment",
-    metadata: {
-      applicationId: paymentInfo.applicationId,
-    },
-    success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
-  });
-
-  res.send({ url: session.url });
-});
-
-app.patch("/verify-payment", async (req, res) => {
-  const sessionId = req.query.session_id;
-
+    // get top scholarships
+app.get("/top/scholarships", async (req, res) => {
   try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    const applicationId = session.metadata.applicationId; 
+    const topScholarships = await scholarshipsCollection
+      .find({})
+      .sort({ applicationFees: 1 })
+      .limit(6)
+      .toArray();
 
-    if (session.payment_status === "paid") {
-      const result = await applicationsCollection.updateOne(
-        { _id: new ObjectId(applicationId) },
-        { $set: { paymentStatus: "paid" } }
-      );
+    
+    const sanitized = topScholarships.map((sch) => ({
+      ...sch,
+      subjectCategory: Array.isArray(sch.subjectCategory) ? sch.subjectCategory : [],
+      universityImage: sch.universityImage || "",
+      scholarshipDescription: sch.scholarshipDescription || "",
+    }));
 
-      if (result.matchedCount > 0) {
-        return res.send({ message: "Payment verified and status updated!" });
-      } else {
-        return res.status(404).send({ message: "Application not found" });
-      }
-    } else {
-      return res.status(400).send({ message: "Payment not completed" });
-    }
-  } catch (err) {
-    console.error(err);
-    return res.status(500).send({ message: err.message });
+    res.send(sanitized);
+  } catch (error) {
+    console.error(error); 
+    res.status(500).send({ success: false, message: error.message });
   }
 });
 
+
+    // payment related apis
+
+    app.post("/create-checkout-session", verifyJWT, async (req, res) => {
+      const paymentInfo = req.body;
+
+      const amount =
+        (Number(paymentInfo.applicationFees) +
+          Number(paymentInfo.serviceCharge)) *
+        100;
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            price_data: {
+              currency: "USD",
+              unit_amount: amount,
+              product_data: {
+                name: paymentInfo.scholarshipName,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        customer_email: paymentInfo.email,
+        mode: "payment",
+        metadata: {
+          applicationId: paymentInfo.applicationId,
+        },
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+      });
+
+      res.send({ url: session.url });
+    });
+
+    app.patch("/verify-payment", async (req, res) => {
+      const sessionId = req.query.session_id;
+
+      try {
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+        const applicationId = session.metadata.applicationId;
+
+        if (session.payment_status === "paid") {
+          const result = await applicationsCollection.updateOne(
+            { _id: new ObjectId(applicationId) },
+            { $set: { paymentStatus: "paid" } }
+          );
+
+          if (result.matchedCount > 0) {
+            return res.send({
+              message: "Payment verified and status updated!",
+            });
+          } else {
+            return res.status(404).send({ message: "Application not found" });
+          }
+        } else {
+          return res.status(400).send({ message: "Payment not completed" });
+        }
+      } catch (err) {
+        console.error(err);
+        return res.status(500).send({ message: err.message });
+      }
+    });
 
     // console.log("✅ MongoDB Connected Successfully");
   } finally {
@@ -806,6 +855,7 @@ run().catch(console.error);
    SERVER START
 ====================== */
 const port = process.env.PORT || 5000;
+module.exports = app;
 app.listen(port, () => {
-  // console.log(`🚀 Server running on port ${port}`);
+  console.log(`🚀 Server running on port ${port}`);
 });
