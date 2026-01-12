@@ -527,7 +527,8 @@ async function run() {
     // ======================
     // Moderator: Get all applications
     // ======================
-    app.get("/moderator/applications",
+    app.get(
+      "/moderator/applications",
       verifyJWT,
       verifyModerator,
       async (req, res) => {
@@ -544,7 +545,8 @@ async function run() {
     );
 
     // Moderator: Update application status
-    app.patch("/moderator/applications/:id",
+    app.patch(
+      "/moderator/applications/:id",
       verifyJWT,
       verifyModerator,
       async (req, res) => {
@@ -570,7 +572,8 @@ async function run() {
     );
 
     // Get all reviews (for moderator)
-    app.get("/moderator/reviews",
+    app.get(
+      "/moderator/reviews",
       verifyJWT,
       verifyModerator,
       async (req, res) => {
@@ -586,7 +589,8 @@ async function run() {
       }
     );
 
-    app.delete("/moderator/reviews/:id",
+    app.delete(
+      "/moderator/reviews/:id",
       verifyJWT,
       verifyModerator,
       async (req, res) => {
@@ -608,18 +612,18 @@ async function run() {
 
     /* ========= JWT ========= */
 
-  app.post("/jwt", async (req, res) => {
-  const { email } = req.body;
-  const user = await usersCollection.findOne({ email });
-  if (!user) return res.status(404).send({ message: "User not found" });
+    app.post("/jwt", async (req, res) => {
+      const { email } = req.body;
+      const user = await usersCollection.findOne({ email });
+      if (!user) return res.status(404).send({ message: "User not found" });
 
-  const token = jwt.sign(
-    { email: user.email, name: user.name },  
-    process.env.JWT_SECRET,
-    { expiresIn: "1h" }
-  );
-  res.send({ token });
-});
+      const token = jwt.sign(
+        { email: user.email, name: user.name },
+        process.env.JWT_SECRET,
+        { expiresIn: "1h" }
+      );
+      res.send({ token });
+    });
 
     /* ========= SCHOLARSHIPS ========= */
 
@@ -631,7 +635,7 @@ async function run() {
           category = "",
           sort = "",
           page = 1,
-          limit = 6,
+          limit = 8,
         } = req.query;
 
         const query = {};
@@ -665,6 +669,17 @@ async function run() {
         res.send({ scholarships, total });
       } catch (error) {
         res.status(500).send({ message: "Failed to fetch scholarships" });
+      }
+    });
+
+    // GET all unique subject categories
+    app.get("/categories", async (req, res) => {
+      try {
+        const categories = await scholarshipsCollection.distinct("degree");
+        res.status(200).send({ categories });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Failed to fetch categories" });
       }
     });
 
@@ -720,7 +735,8 @@ async function run() {
     });
 
     // Delete scholarship
-    app.delete("/scholarships/:id",
+    app.delete(
+      "/scholarships/:id",
       verifyJWT,
       verifyAdmin,
       async (req, res) => {
@@ -754,29 +770,29 @@ async function run() {
     });
 
     // get top scholarships
-app.get("/top/scholarships", async (req, res) => {
-  try {
-    const topScholarships = await scholarshipsCollection
-      .find({})
-      .sort({ applicationFees: 1 })
-      .limit(6)
-      .toArray();
+    app.get("/top/scholarships", async (req, res) => {
+      try {
+        const topScholarships = await scholarshipsCollection
+          .find({})
+          .sort({ applicationFees: 1 })
+          .limit(6)
+          .toArray();
 
-    
-    const sanitized = topScholarships.map((sch) => ({
-      ...sch,
-      subjectCategory: Array.isArray(sch.subjectCategory) ? sch.subjectCategory : [],
-      universityImage: sch.universityImage || "",
-      scholarshipDescription: sch.scholarshipDescription || "",
-    }));
+        const sanitized = topScholarships.map((sch) => ({
+          ...sch,
+          subjectCategory: Array.isArray(sch.subjectCategory)
+            ? sch.subjectCategory
+            : [],
+          universityImage: sch.universityImage || "",
+          scholarshipDescription: sch.scholarshipDescription || "",
+        }));
 
-    res.send(sanitized);
-  } catch (error) {
-    console.error(error); 
-    res.status(500).send({ success: false, message: error.message });
-  }
-});
-
+        res.send(sanitized);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
 
     // payment related apis
 
